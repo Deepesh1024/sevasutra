@@ -60,11 +60,14 @@ export async function saveProfileAction(fd: FormData) {
   redirect(`/profile?profile=${profileId}&saved=${section}#sec-${section}`);
 }
 
-export async function deleteAnswerAction(fd: FormData) {
+/** Bound with the field key (`deleteAnswerAction.bind(null, key)`): React overrides `name` on formAction buttons. */
+export async function deleteAnswerAction(key: string, fd: FormData) {
   const user = await currentUser();
   if (!user) redirect("/login");
   const profileId = String(fd.get("profileId"));
-  await deleteFact(user, profileId, String(fd.get("key")));
+  // deleteFact checks the profile belongs to this user; only known field keys are accepted.
+  if (!FIELD_MAP[key]) return;
+  await deleteFact(user, profileId, key);
   revalidatePath("/profile");
 }
 

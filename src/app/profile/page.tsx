@@ -69,7 +69,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
                         <p key={o.id} className="help"><Pill tone="ok">{t(`profile.provenance.${o.provenance}` as never)}</Pill> {JSON.stringify(o.value)} · {fmtDate(o.verifiedAt ?? o.collectedAt, lang)}{o.expiresAt ? ` · ${hi ? "समाप्ति" : "expires"} ${fmtDate(o.expiresAt, lang)}` : ""}</p>
                       ))}
                       {valueOf(f.key) !== undefined && (
-                        <button formAction={deleteAnswerAction} name="key" value={f.key} className="text-sm text-bad underline" formNoValidate>{t("common.delete")} {hi ? "उत्तर" : "answer"}</button>
+                        <button formAction={deleteAnswerAction.bind(null, f.key)} className="text-sm text-bad underline" formNoValidate>{t("common.delete")} {hi ? "उत्तर" : "answer"}</button>
                       )}
                     </div>
                   );

@@ -38,7 +38,7 @@ async function main() {
       await tx.ruleTestCase.createMany({
         data: all.map((t) => ({ schemeId: content.schemeId, name: t.name, kind: t.kind, facts: t as never, documents: t.documents ?? [], referenceDate: t.now ? new Date(t.now) : null, expected: t.expected })),
       });
-    });
+    }, { timeout: 30000 });
     console.log(`seeded ${content.schemeId}`);
   }
 

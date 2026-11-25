@@ -9,6 +9,7 @@ import { setLang, togglePref } from "./actions/prefs";
 import { logout } from "./actions/auth";
 import { Ticker, type TickerItem } from "@/components/Ticker";
 import { listPublished, contentOf } from "@/lib/schemes/repo";
+import { maskPhone } from "@/lib/redact";
 
 const noto = Noto_Sans({ subsets: ["latin"], variable: "--font-noto", display: "swap" });
 const notoDeva = Noto_Sans_Devanagari({ subsets: ["devanagari"], variable: "--font-noto-deva", weight: ["400", "600", "700"], display: "swap" });
@@ -34,6 +35,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     const tag = c.lifecycleStatus !== "open" ? (hi ? "बंद" : "Closed") : c.isThirdParty ? (hi ? "गैर-सरकारी" : "Non-govt") : c.kind === "scholarship" ? (hi ? "छात्रवृत्ति" : "Scholarship") : c.stateScope.length ? c.stateScope.join(", ") : undefined;
     return { href: `/schemes/${v.schemeId}`, text: `${name} — ${firstSentence(summary)}`, tag };
   });
+
+  // Show which account is signed in, so switching emails/numbers is never ambiguous.
+  const maskEmail = (e: string) => e.replace(/^(.{1,2})[^@]*(@.*)$/, "$1•••$2");
+  const signedInAs = user ? (user.email ? maskEmail(user.email) : user.phoneE164 ? maskPhone(user.phoneE164) : user.displayName ?? "") : "";
 
   const nav: [string, string][] = [
     ["/schemes", t("nav.schemes")],
@@ -68,6 +73,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </form>
               {user ? (
                 <>
+                  {signedInAs && <span className="text-ink-2" title={hi ? "साइन इन खाता" : "Signed-in account"}>{hi ? "साइन इन:" : "Signed in as"} <strong className="text-ink">{signedInAs}</strong></span>}
                   <Link href="/account" className="btn btn-sm">{t("nav.account")}</Link>
                   <form action={logout}><button className="btn btn-sm">{t("nav.logout")}</button></form>
                 </>

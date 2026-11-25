@@ -44,7 +44,7 @@ export function PhoneOtpForm({ next, linking, lang, defaultChannel = "email" }: 
         <input type="hidden" name="next" value={next} />
         <input type="hidden" name="step" value="verify" />
         <input type="hidden" name="channel" value={state.channel} />
-        <p id="otp-help">{hi ? `हमने ${state.phone} पर 6 अंकों का कोड भेजा है। यह 5 मिनट तक मान्य है।` : `We sent a 6-digit code to ${state.phone}. It is valid for 5 minutes.`}{state.channel === "email" && (hi ? " स्पैम फ़ोल्डर भी देखें।" : " Check your spam folder too.")}</p>
+        <p id="otp-help">{hi ? "हमने " : "We sent a 6-digit code to "}<strong className="text-primary">{state.phone}</strong>{hi ? " पर 6 अंकों का कोड भेजा है। यह 5 मिनट तक मान्य है।" : ". It is valid for 5 minutes. Not your address? Use “Change number” below."}{state.channel === "email" && (hi ? " स्पैम फ़ोल्डर भी देखें।" : " Check your spam folder too.")}</p>
         {state.devCode && (
           <div className="card p-3 border-dashed bg-surface-2 text-sm" role="note">
             <strong>Development mode:</strong> no {state.channel === "email" ? "mail server" : "SMS provider"} is configured, so the code is shown here instead: <code className="font-mono text-base">{state.devCode}</code>

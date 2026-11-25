@@ -1,0 +1,453 @@
+// SevaSutra data model.
+// Identity, profile, document, content and audit data live in separate tables (and could be
+// split into separate databases later). Evaluations and published scheme versions are immutable.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── Identity ─────────────────────────
+
+model User {
+  id                String    @id @default(cuid())
+  role              String    @default("explorer") // explorer | applicant | support | admin
+  displayName       String?
+  email             String?
+  emailVerifiedAt   DateTime?
+  phoneE164         String?   @unique
+  phoneVerifiedAt   DateTime?
+  locale            String    @default("en")
+  totpSecretEnc     String? // AES-GCM encrypted TOTP secret (admin / support MFA)
+  totpEnabledAt     DateTime?
+  notificationPrefs Json      @default("{\"email\":false,\"deadlines\":true,\"documents\":true,\"profile\":true,\"status\":true,\"corrections\":true}")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
+
+  identities   Identity[]
+  sessions     Session[]
+  consents     Consent[]
+  profiles     Profile[]
+  documents    Document[]
+  evaluations  Evaluation[]
+  applications Application[]
+  saved        SavedScheme[]
+  feedback     Feedback[]     @relation("FeedbackAuthor")
+  notifications Notification[]
+}
+
+model Identity {
+  id        String   @id @default(cuid())
+  userId    String
+  provider  String // phone | google
+  subject   String // E.164 phone or Google `sub`
+  email     String?
+  linkedAt  DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, subject])
+  @@index([userId])
+}
+
+model Session {
+  id          String    @id @default(cuid())
+  tokenHash   String    @unique
+  userId      String?
+  isGuest     Boolean   @default(false)
+  mfaVerified Boolean   @default(false)
+  userAgent   String?
+  ipHash      String?
+  createdAt   DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model OtpChallenge {
+  id          String    @id @default(cuid())
+  phoneHash   String
+  codeHash    String
+  purpose     String // login | link
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  lockedAt    DateTime?
+  ipHash      String?
+  createdAt   DateTime  @default(now())
+
+  @@index([phoneHash, createdAt])
+}
+
+model RateLimit {
+  key         String   @id
+  count       Int
+  windowStart DateTime
+}
+
+model Consent {
+  id            String    @id @default(cuid())
+  userId        String
+  profileId     String?
+  purpose       String // see src/lib/consent.ts
+  granted       Boolean
+  noticeVersion String
+  createdAt     DateTime  @default(now())
+  withdrawnAt   DateTime?
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+}
+
+// ───────────────────────── Profile ─────────────────────────
+
+model Profile {
+  id                String        @id @default(cuid())
+  userId            String
+  label             String        @default("Me")
+  relationship      String        @default("self") // self | spouse | child | parent | sibling | other
+  isPrimary         Boolean       @default(false)
+  guardianConsentAt DateTime?
+  createdAt         DateTime      @default(now())
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  facts             ProfileFact[]
+  evaluations       Evaluation[]
+
+  @@index([userId])
+}
+
+model ProfileFact {
+  id           String    @id @default(cuid())
+  profileId    String
+  key          String
+  value        Json
+  provenance   String // user_entered | document_extracted | government_verified | operator_verified
+  source       String? // free text: "profile form", document id, adapter name…
+  documentId   String?
+  collectedAt  DateTime  @default(now())
+  verifiedAt   DateTime?
+  expiresAt    DateTime?
+  supersededAt DateTime?
+  profile      Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, key])
+}
+
+// ───────────────────────── Documents ─────────────────────────
+
+model Document {
+  id          String               @id @default(cuid())
+  userId      String
+  profileId   String?
+  docType     String
+  displayName String
+  mimeType    String
+  sizeBytes   Int
+  sha256      String
+  storageKey  String               @unique
+  encIv       String
+  encTag      String
+  scanStatus  String               @default("pending") // pending | clean | infected | error
+  verifyStatus     String            @default("unverified") // verified | unverified (photo / legacy)
+  verifyMethod     String? // e.g. "ocr+llm:qwen/qwen3.8-27b", "ocr+keywords"
+  verifyConfidence Float?
+  verifyNote       String?
+  status      String               @default("active") // active | deleted
+  issuedAt    DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime             @default(now())
+  deletedAt   DateTime?
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  extractions DocumentExtraction[]
+
+  @@index([userId])
+  @@index([userId, sha256])
+}
+
+model DocumentExtraction {
+  id          String    @id @default(cuid())
+  documentId  String
+  provider    String
+  docTypeGuess String?
+  fields      Json // [{ key, value, confidence }]
+  status      String    @default("pending") // pending | confirmed | rejected
+  confirmedAt DateTime?
+  createdAt   DateTime  @default(now())
+  document    Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+// ───────────────────────── Knowledge system ─────────────────────────
+
+model Source {
+  id             String           @id
+  title          String
+  url            String
+  publisher      String
+  kind           String // guideline | portal | directory | faq | dataset | api
+  isOfficial     Boolean          @default(true)
+  isThirdParty   Boolean          @default(false)
+  licence        String
+  termsNotes     String
+  reviewerStatus String           @default("pending") // pending | approved | blocked
+  lastFetchedAt  DateTime?
+  lastHttpStatus Int?
+  contentHash    String?
+  createdAt      DateTime         @default(now())
+  snapshots      SourceSnapshot[]
+}
+
+model SourceSnapshot {
+  id            String   @id @default(cuid())
+  sourceId      String
+  fetchedAt     DateTime @default(now())
+  httpStatus    Int?
+  contentHash   String?
+  parserVersion String
+  sourceVersion String?
+  reviewerStatus String  @default("pending")
+  notes         String?
+  source        Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+}
+
+model Scheme {
+  id               String          @id // scheme_id slug
+  highImpact       Boolean         @default(false)
+  currentVersionId String?         @unique
+  createdAt        DateTime        @default(now())
+  currentVersion   SchemeVersion?  @relation("CurrentVersion", fields: [currentVersionId], references: [id])
+  versions         SchemeVersion[] @relation("Versions")
+  testCases        RuleTestCase[]
+  saved            SavedScheme[]
+}
+
+model SchemeVersion {
+  id              String          @id @default(cuid())
+  schemeId        String
+  version         Int
+  status          String          @default("draft") // draft | in_review | published | superseded | rejected
+  // Denormalised filter columns (copied from content on save)
+  name            String
+  ministry        String
+  level           String // central | state | UT | local | joint
+  stateScope      String[]
+  category        String
+  kind            String // scheme | scholarship
+  scholarshipType String? // central | state | university | corporate_csr | fellowship
+  benefitType     String
+  applicationMode String
+  lifecycleStatus String // open | closed | upcoming | discontinued
+  deadline        DateTime?
+  isThirdParty    Boolean         @default(false)
+  content         Json // canonical scheme record (see src/lib/schemes/types.ts)
+  changeNote      String?
+  authorId        String?
+  reviewerId      String?
+  reviewedAt      DateTime?
+  publishedAt     DateTime?
+  lastVerifiedAt  DateTime?
+  createdAt       DateTime        @default(now())
+  scheme          Scheme          @relation("Versions", fields: [schemeId], references: [id], onDelete: Cascade)
+  currentOf       Scheme?         @relation("CurrentVersion")
+  rule            EligibilityRule?
+  chunks          ContentChunk[]
+
+  @@unique([schemeId, version])
+  @@index([status])
+}
+
+model EligibilityRule {
+  id              String        @id @default(cuid())
+  schemeVersionId String        @unique
+  definition      Json
+  ruleHash        String
+  effectiveFrom   DateTime
+  effectiveUntil  DateTime?
+  schemeVersion   SchemeVersion @relation(fields: [schemeVersionId], references: [id], onDelete: Cascade)
+}
+
+model RuleTestCase {
+  id            String   @id @default(cuid())
+  schemeId      String
+  name          String
+  kind          String // eligible | ineligible | boundary_age | boundary_income | missing_document | conflicting_document | expired_deadline | state_mismatch | other
+  facts         Json
+  documents     String[]
+  referenceDate DateTime?
+  expected      String
+  createdAt     DateTime @default(now())
+  scheme        Scheme   @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+}
+
+model ContentChunk {
+  id              String        @id @default(cuid())
+  schemeVersionId String
+  sourceId        String?
+  section         String
+  locale          String
+  text            String
+  injectionFlag   Boolean       @default(false)
+  schemeVersion   SchemeVersion @relation(fields: [schemeVersionId], references: [id], onDelete: Cascade)
+
+  @@index([schemeVersionId])
+}
+
+model Translation {
+  id          String   @id @default(cuid())
+  term        String
+  locale      String
+  text        String
+  status      String   @default("draft") // draft | approved
+  notes       String?
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  @@unique([term, locale])
+}
+
+// ───────────────────────── Evaluation & applications ─────────────────────────
+
+model Evaluation {
+  id              String   @id @default(cuid())
+  userId          String
+  profileId       String
+  schemeId        String
+  schemeVersionId String
+  ruleHash        String
+  engineVersion   String
+  referenceDate   DateTime
+  inputSnapshot   Json
+  inputHash       String
+  status          String
+  result          Json
+  createdAt       DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile         Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([userId, schemeId, createdAt])
+}
+
+model SavedScheme {
+  userId    String
+  schemeId  String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheme    Scheme   @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+
+  @@id([userId, schemeId])
+}
+
+model Application {
+  id           String                @id @default(cuid())
+  userId       String
+  profileId    String
+  schemeId     String
+  state        String                @default("not_started")
+  checklist    Json                  @default("{}")
+  externalRef  String?
+  redirectedAt DateTime?
+  renewalDueAt DateTime?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  external     ExternalApplication[]
+
+  @@unique([userId, profileId, schemeId])
+}
+
+model ExternalApplication {
+  id             String      @id @default(cuid())
+  applicationId  String
+  adapter        String
+  idempotencyKey String      @unique
+  status         String      @default("pending") // pending | sent | accepted | failed | dead
+  payloadPreview Json
+  consentId      String
+  attempts       Int         @default(0)
+  nextAttemptAt  DateTime?
+  lastError      String?
+  externalRef    String?
+  createdAt      DateTime    @default(now())
+  application    Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+// ───────────────────────── Communications ─────────────────────────
+
+model Notification {
+  id                String    @id @default(cuid())
+  userId            String
+  channel           String    @default("email")
+  template          String
+  dedupeKey         String    @unique
+  payload           Json
+  status            String    @default("queued") // queued | sent | failed | dead | suppressed
+  attempts          Int       @default(0)
+  nextAttemptAt     DateTime  @default(now())
+  sentAt            DateTime?
+  lastError         String?
+  providerMessageId String?
+  createdAt         DateTime  @default(now())
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+}
+
+model DevMail {
+  id        String   @id @default(cuid())
+  to        String
+  subject   String
+  text      String
+  createdAt DateTime @default(now())
+}
+
+// ───────────────────────── Quality & audit ─────────────────────────
+
+model Feedback {
+  id         String    @id @default(cuid())
+  userId     String?
+  schemeId   String?
+  kind       String // outdated | incorrect | question | other
+  message    String
+  status     String    @default("open") // open | triaged | resolved
+  response   String?
+  assigneeId String?
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+  user       User?     @relation("FeedbackAuthor", fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model ChatMessage {
+  id               String   @id @default(cuid())
+  sessionKey       String // pseudonymous: hash of session id
+  role             String
+  content          String // secrets masked before storage
+  citations        Json     @default("[]")
+  refused          Boolean  @default(false)
+  citationFailure  Boolean  @default(false)
+  promptVersion    String?
+  createdAt        DateTime @default(now())
+
+  @@index([sessionKey, createdAt])
+}
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorType  String // user | guest | operator | admin | system
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json     @default("{}")
+  ipHash     String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+}

@@ -1,0 +1,57 @@
+{
+  "name": "sevasutra",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "db:start": "LC_ALL=en_US.UTF-8 /opt/homebrew/opt/postgresql@16/bin/pg_ctl -D .pgdata -o \"-p 54329 -k /tmp\" -l .pgdata/server.log start",
+    "db:stop": "/opt/homebrew/opt/postgresql@16/bin/pg_ctl -D .pgdata stop",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "tsx --env-file=.env prisma/seed.ts",
+    "db:reset": "prisma migrate reset --force && tsx --env-file=.env prisma/seed.ts",
+    "worker": "tsx --env-file=.env scripts/worker.ts",
+    "reminders": "tsx --env-file=.env scripts/reminders.ts"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.100",
+    "@prisma/client": "^6.19.3",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/hin": "^1.0.0",
+    "jose": "^5.10.0",
+    "next": "15.5.29",
+    "nodemailer": "^6.10.1",
+    "otplib": "^12.0.1",
+    "prisma": "^6.19.3",
+    "qrcode": "^1.5.4",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "server-only": "^0.0.1",
+    "tesseract.js": "^5.1.1",
+    "unpdf": "^0.12.2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/nodemailer": "^6.4.24",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "15.5.29",
+    "fast-check": "^3.23.2",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.15",
+    "typescript": "^5",
+    "vitest": "^3.2.7"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
+}

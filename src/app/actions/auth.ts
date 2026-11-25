@@ -171,7 +171,19 @@ async function signInGoogleIdentity(sub: string, email: string | undefined, name
     await db.identity.create({ data: { userId: u.id, provider: "google", subject: sub, email } });
     await audit({ actorId: u.id, actorType: "user", action: "account.created", entityType: "user", entityId: u.id, metadata: { via: "google" } });
     userId = u.id;
+  } else {
+    // Keep the User row's display fields in sync with what Google reports; this also
+    // ensures switching Google accounts never inherits a stale name/email from a prior user.
+    const updates: Record<string, string | undefined> = {};
+    if (email && ident?.user?.email !== email) updates.email = email;
+    if (name && ident?.user?.displayName !== name) updates.displayName = name;
+    if (Object.keys(updates).length) {
+      await db.user.update({ where: { id: userId }, data: updates });
+      await db.identity.update({ where: { provider_subject: { provider: "google", subject: sub } }, data: { email: email ?? undefined } });
+    }
   }
+  // Destroy any existing session *before* creating a new one so a user who signs in
+  // with a different Google account always gets a fully fresh, isolated session.
   await destroySession();
   await createSession(userId);
   await audit({ actorId: userId, actorType: "user", action: "auth.login", entityType: "user", entityId: userId, metadata: { via: "google" } });

@@ -35,7 +35,19 @@ const nextConfig: NextConfig = {
           ...(isDev ? [] : [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }]),
         ],
       },
+      // Private pages that contain per-user data must never be served from an HTTP cache.
+      // Without no-store a browser (or CDN) can serve a previous user's cached page to the
+      // next person who visits the same URL — even after the session cookie has changed.
+      {
+        source: "/(dashboard|profile|documents|account|applications|consent|chat|admin)/:path*",
+        headers: [{ key: "Cache-Control", value: "no-store" }],
+      },
+      {
+        source: "/(dashboard|profile|documents|account|applications|consent|chat|admin)",
+        headers: [{ key: "Cache-Control", value: "no-store" }],
+      },
       { source: "/api/documents/:path*", headers: [{ key: "Cache-Control", value: "no-store" }] },
+      { source: "/api/:path*", headers: [{ key: "Cache-Control", value: "no-store" }] },
     ];
   },
 };
